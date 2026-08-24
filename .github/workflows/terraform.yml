@@ -1,5 +1,4 @@
 name: Terraform AWS Deploy
-
 on:
   push:
     branches: [ "main" ]
@@ -9,18 +8,15 @@ on:
     branches: [ "main" ]
     paths:
       - "main/**"
-  workflow_dispatch: {}   # lets you also trigger it manually from the Actions tab
-
+  workflow_dispatch: {}
 env:
   AWS_REGION: ap-south-1
   TF_WORKING_DIR: main
   TF_STATE_BUCKET: aws-nl-tf-state-mumbai-2026-001
   TF_PLAN_KEY: plans/latest.tfplan
-
 permissions:
    id-token: write
    contents: read
-
 jobs:
   terraform:
     name: Terraform Plan & Apply
@@ -28,39 +24,32 @@ jobs:
     defaults:
       run:
         working-directory: ${{ env.TF_WORKING_DIR }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+      - name: Debug OIDC token
+        run: |
+          curl -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value' | cut -d. -f2 | base64 -d 2>/dev/null | jq .
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::579421472450:role/GitHubActionsTerraformRole
           aws-region: ${{ env.AWS_REGION }}
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.10.5"   # must be >= 1.10 for S3 native locking (use_lockfile)
-
+          terraform_version: "1.10.5"
       - name: Terraform Init
         run: terraform init
-
       - name: Terraform Format Check
         run: terraform fmt -check
         continue-on-error: true
-
       - name: Terraform Validate
         run: terraform validate
-
       - name: Terraform Plan
         run: terraform plan -out=tfplan
-
       - name: Store Terraform plan in state bucket
         run: aws s3 cp tfplan "s3://${TF_STATE_BUCKET}/${TF_PLAN_KEY}"
-
-      # Apply only runs on a push to main (not on pull requests)
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: terraform apply -auto-approve tfplan
