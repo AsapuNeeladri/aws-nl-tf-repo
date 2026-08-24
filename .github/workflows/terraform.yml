@@ -1,0 +1,66 @@
+name: Terraform AWS Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "main/**"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "main/**"
+  workflow_dispatch: {}   # lets you also trigger it manually from the Actions tab
+
+env:
+  AWS_REGION: ap-south-1
+  TF_WORKING_DIR: main
+  TF_STATE_BUCKET: aws-nl-tf-state-mumbai-2026-001
+  TF_PLAN_KEY: plans/latest.tfplan
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"   # must be >= 1.10 for S3 native locking (use_lockfile)
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check
+        continue-on-error: true
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      - name: Store Terraform plan in state bucket
+        run: aws s3 cp tfplan "s3://${TF_STATE_BUCKET}/${TF_PLAN_KEY}"
+
+      # Apply only runs on a push to main (not on pull requests)
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: terraform apply -auto-approve tfplan
