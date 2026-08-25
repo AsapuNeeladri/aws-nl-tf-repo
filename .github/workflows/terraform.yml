@@ -1,0 +1,71 @@
+name: Terraform AWS Deploy
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "main/**"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "main/**"
+  workflow_dispatch: {}
+env:
+  AWS_REGION: ap-south-1
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+  AWS_OIDC_AUDIENCE: sts.amazonaws.com
+  TF_WORKING_DIR: main
+  TF_STATE_BUCKET: aws-nl-tf-state-mumbai-2026-001
+  TF_PLAN_KEY: plans/latest.tfplan
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform:
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check deployment role configuration
+        if: ${{ env.AWS_ROLE_ARN == '' }}
+        run: |
+          echo "::error::Repository variable AWS_ROLE_ARN is not set. Add the role ARN from bootstrap output under Settings > Secrets and variables > Actions > Variables."
+          exit 1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: ${{ env.AWS_OIDC_AUDIENCE }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check
+        continue-on-error: true
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      - name: Store Terraform plan in state bucket
+        run: aws s3 cp tfplan "s3://${TF_STATE_BUCKET}/${TF_PLAN_KEY}"
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: terraform apply -auto-approve tfplan
