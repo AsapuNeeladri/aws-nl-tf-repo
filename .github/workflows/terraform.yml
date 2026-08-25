@@ -17,14 +17,9 @@ env:
   TF_STATE_BUCKET: aws-nl-tf-state-mumbai-2026-001
   TF_PLAN_KEY: plans/latest.tfplan
 permissions:
-<<<<<<< HEAD
   contents: read
   id-token: write
 
-=======
-   id-token: write
-   contents: read
->>>>>>> 3607338099d77728d70d5cb012216ea56e127d41
 jobs:
   terraform:
     name: Terraform Plan & Apply
@@ -32,10 +27,10 @@ jobs:
     defaults:
       run:
         working-directory: ${{ env.TF_WORKING_DIR }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-<<<<<<< HEAD
 
       - name: Check deployment role configuration
         if: ${{ env.AWS_ROLE_ARN == '' }}
@@ -50,32 +45,27 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           audience: ${{ env.AWS_OIDC_AUDIENCE }}
 
-=======
-      - name: Debug OIDC token
-        run: |
-          curl -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value' | cut -d. -f2 | base64 -d 2>/dev/null | jq .
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::579421472450:role/GitHubActionsTerraformRole
-          aws-region: ap-south-1
-          audience: ://sts.amazonaws.com
->>>>>>> 3607338099d77728d70d5cb012216ea56e127d41
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.10.5"
+
       - name: Terraform Init
         run: terraform init
+
       - name: Terraform Format Check
         run: terraform fmt -check
         continue-on-error: true
+
       - name: Terraform Validate
         run: terraform validate
+
       - name: Terraform Plan
         run: terraform plan -out=tfplan
+
       - name: Store Terraform plan in state bucket
         run: aws s3 cp tfplan "s3://${TF_STATE_BUCKET}/${TF_PLAN_KEY}"
+
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: terraform apply -auto-approve tfplan
