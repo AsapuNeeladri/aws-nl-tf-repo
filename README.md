@@ -31,17 +31,23 @@ this command completes.
 
 ## GitHub Actions AWS access
 
-This initial workflow uses an IAM access key because no dedicated deployment
-role exists yet. Create an IAM user for deployment, grant it the permissions
-needed by Terraform and S3 state locking, and add these repository secrets at
-**Settings > Secrets and variables > Actions**:
+The workflow uses GitHub OIDC, so it does not use access-key secrets. Run the
+bootstrap configuration first, then copy the `github_actions_role_arn` output
+into a repository variable named `AWS_ROLE_ARN` at **Settings > Secrets and
+variables > Actions > Variables**. The repository must be
+`AsapuNeeladri/aws-nl-tf-repo`, matching the trust policy in
+`bootstrap/main.tf`.
 
-- `AWS_ACCESS_KEY_ID`: the IAM user's access key ID.
-- `AWS_SECRET_ACCESS_KEY`: the IAM user's secret access key.
+If the role already exists, get its ARN from IAM or run:
 
-Never put either value in `local.tf`, Terraform files, commits, or workflow
-text. Access keys are long-lived credentials; rotate them and restrict the IAM
-user's permissions. Move to GitHub OIDC later to remove stored AWS secrets.
+```powershell
+terraform -chdir=bootstrap output github_actions_role_arn
+```
+
+Do not add `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` to this workflow.
+The role trust policy permits the `main` branch and pull requests for this
+repository, and the workflow's `id-token: write` permission supplies the OIDC
+token.
 
 Push to `main`. The workflow validates and plans on pushes and pull requests,
 uploads the plan to the state bucket under `plans/latest.tfplan`, and applies
