@@ -40,3 +40,57 @@ resource "aws_instance" "private_ec2" {
     Name = "${local.project_name}-private-ec2"
   }
 }
+
+########################################
+# EBS data volume for the public instance
+########################################
+resource "aws_ebs_volume" "data" {
+  availability_zone = local.availability_zone
+  size              = 30
+  type              = "gp3"
+  encrypted         = true
+
+  tags = {
+    Name = "${local.project_name}-data-volume"
+  }
+}
+
+resource "aws_volume_attachment" "data" {
+  device_name  = "/dev/sdf"
+  volume_id    = aws_ebs_volume.data.id
+  instance_id  = aws_instance.public_ec2.id
+  force_detach = true
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_ssm" {
+  role       = aws_iam_role.ec2_s3_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_ssm_association" "mount_data_volume" {
+  name             = "AWS-RunShellScript"
+  association_name = "${local.project_name}-mount-data-volume"
+  depends_on       = [aws_volume_attachment.data, aws_iam_role_policy_attachment.ec2_ssm]
+
+  targets {
+    key    = "InstanceIds"
+    values = [aws_instance.public_ec2.id]
+  }
+
+  parameters = {
+    commands = <<-EOF
+      set -e
+      device="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${replace(aws_ebs_volume.data.id, "-", "")}"
+      for attempt in $(seq 1 60); do
+        if [ -e "$device" ]; then break; fi
+        sleep 5
+      done
+      test -e "$device"
+      if ! blkid "$device" >/dev/null 2>&1; then mkfs -t xfs "$device"; fi
+      mkdir -p /data
+      uuid=$(blkid -s UUID -o value "$device")
+      grep -q "UUID=$uuid /data" /etc/fstab || echo "UUID=$uuid /data xfs defaults,nofail 0 2" >> /etc/fstab
+      mount -a
+    EOF
+  }
+}

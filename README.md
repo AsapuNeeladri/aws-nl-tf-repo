@@ -53,6 +53,43 @@ Push to `main`. The workflow validates and plans on pushes and pull requests,
 uploads the plan to the state bucket under `plans/latest.tfplan`, and applies
 only after a push to `main`.
 
+## EBS volume and mount
+
+The main Terraform configuration creates one encrypted 30 GB `gp3` EBS volume
+in `ap-south-1a` and attaches it to the existing public EC2 instance. An AWS
+Systems Manager command formats a new volume as XFS, mounts it at `/data`, and
+adds it to `/etc/fstab` so it is mounted again after a reboot. No AWS access
+keys are stored in GitHub.
+
+Follow these steps:
+
+1. Run the bootstrap Terraform once and add `github_actions_role_arn` as the
+	GitHub repository variable `AWS_ROLE_ARN`.
+2. Push a change under `main/` to the `main` branch.
+3. Open the repository's **Actions** tab and wait for **Terraform Plan & Apply**
+	to finish successfully.
+4. In AWS Console, open **EC2 > Volumes** and confirm the 30 GiB volume is
+	`In-use` and attached to the public instance.
+5. In **Systems Manager > Fleet Manager**, confirm the public instance is
+	`Managed`. SSM must be connected for Terraform to run the mount command.
+6. On the instance, confirm `/data` is mounted with `df -h /data`.
+
+If the instance is not `Managed`, install/start the SSM Agent and make sure its
+EC2 instance profile has `AmazonSSMManagedInstanceCore`. This project adds that
+policy to the existing EC2 role. The instance also needs outbound internet
+access or VPC endpoints for Systems Manager.
+
+To verify the disk from an SSM session, run:
+
+```bash
+lsblk
+df -h /data
+mountpoint /data
+```
+
+Do not run `mkfs` manually on a volume that contains data because formatting
+erases the data.
+
 ## Local run
 
 ```powershell
